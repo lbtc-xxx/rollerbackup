@@ -1,0 +1,120 @@
+<project name="rollerbackup" basedir="." default="usage">
+	<xmlproperty file="build-props.xml"/>
+	<property name="pg_dump" value="/usr/bin/pg_dump"/>
+	<property name="pg_dump_args" value="-F c"/>
+	<property name="tar" value="/bin/tar"/>
+	<property name="mktemp" value="/bin/mktemp"/>
+
+	<target name="usage">
+		<echo>
+			targets:
+			- backup
+			- purge
+		</echo>
+	</target>
+
+	<tstamp>
+		<format property="now" pattern="yyyyMMdd_HHmmss"/>
+	</tstamp>
+	
+	<target name="backup" depends="backup-db,backup-datadir"/>
+	
+	<target name="backup-db">
+		<fail unless="prop.source.host"/>
+		<fail unless="prop.source.username"/>
+		<fail unless="prop.source.keyfile"/>
+		<fail unless="prop.source.database"/>
+		<mkdir dir="${prop.destination.path}/${now}"/>
+		<property name="db.output.local" value="${prop.destination.path}/${now}/${prop.source.database}.dump"/>
+		
+		<sshexec host="${prop.source.host}"
+				username="${prop.source.username}"
+				keyfile="${prop.source.keyfile}"
+				command="TMPFILE=`${mktemp}` &amp;&amp; ${pg_dump} ${pg_dump_args} ${prop.source.database} > $${TMPFILE} &amp;&amp; echo $${TMPFILE}"
+				outputproperty="db.output.remote"
+				failonerror="true"/>
+				
+		<scp file="${prop.source.username}@${prop.source.host}:${db.output.remote}"
+			localTofile="${db.output.local}"
+			keyfile="${prop.source.keyfile}"
+			failonerror="true"/>
+		
+		<sshexec host="${prop.source.host}"
+				username="${prop.source.username}"
+				keyfile="${prop.source.keyfile}"
+				command="rm -f ${db.output.remote}"
+				failonerror="true"/>
+				
+		<echo message="Created database backup: ${db.output.local}"/>
+	</target>
+
+	<target name="backup-datadir">
+		<fail unless="prop.source.host"/>
+		<fail unless="prop.source.username"/>
+		<fail unless="prop.source.keyfile"/>
+		<fail unless="prop.source.datadir"/>
+		<mkdir dir="${prop.destination.path}/${now}"/>
+		
+		<basename property="datadir.basename" file="${prop.source.datadir}"/>
+		<property name="datadir.output.local" value="${prop.destination.path}/${now}/${datadir.basename}.tar"/>
+		<property name="datadir.parent" location="${prop.source.datadir}/../"/>
+		
+		<sshexec host="${prop.source.host}"
+				username="${prop.source.username}"
+				keyfile="${prop.source.keyfile}"
+				command="TMPFILE=`${mktemp}` &amp;&amp; ${tar} cf $${TMPFILE} -C ${datadir.parent} ${datadir.basename} &amp;&amp; echo $${TMPFILE}"
+				outputproperty="datadir.output.remote"
+				failonerror="true"/>
+		
+		<scp file="${prop.source.username}@${prop.source.host}:${datadir.output.remote}"
+			localTofile="${datadir.output.local}"
+			keyfile="${prop.source.keyfile}"
+			failonerror="true"/>
+		
+		<sshexec host="${prop.source.host}"
+				username="${prop.source.username}"
+				keyfile="${prop.source.keyfile}"
+				command="rm -f ${datadir.output.remote}"
+				failonerror="true"/>
+			
+		<echo message="Created datadir backup: ${datadir.output.local}"/>
+	</target>
+
+	<target name="purge">
+		<fail unless="prop.destination.path"/>
+		<fail unless="prop.destination.preserves"/>
+		<resources id="var.sorted">
+			<sort>
+				<name/>
+				<dirset dir="${prop.destination.path}" includes="*"/>
+			</sort>
+		</resources>
+		
+		<resources id="var.preserves">
+			<last count="${prop.destination.preserves}">
+				<resources refid="var.sorted"/>
+			</last>
+		</resources>
+
+		<difference id="var.to-purge">
+			<resources refid="var.sorted"/>
+			<resources refid="var.preserves"/>
+		</difference>
+
+		<!--
+		converting a resource collection to comma separated string
+		which will be used as an argument of files task
+		http://ant.1045680.n5.nabble.com/Resource-collections-Linux-vs-windows-td5714898.html
+		-->
+		<pathconvert property="dirs-to-delete" pathsep="," refid="var.to-purge">
+			<!-- add ** as suffix for each element (directory) -->
+			<regexpmapper from="(^.*$)" to="\1\${file.separator}**" />
+		</pathconvert>
+
+		<delete verbose="true">
+			<files includes="${dirs-to-delete}"/>
+		</delete>
+
+	</target>
+	
+</project>

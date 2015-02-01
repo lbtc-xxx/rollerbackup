@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prop>
+	<source>
+		<host>roller.example.com</host>
+		<username>scott</username>
+		<keyfile>/Users/scott/.ssh/id_rsa</keyfile>
+		<database>roller</database>
+		<datadir>/usr/local/rollerdata</datadir>
+	</source>
+	<destination>
+		<path>/Users/scott/roller-backup</path>
+		<preserves>2</preserves>
+	</destination>
+</prop>
